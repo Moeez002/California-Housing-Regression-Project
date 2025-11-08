@@ -75,7 +75,7 @@ Missing values are handled, and new ratio-based features were engineered:
 | Voting Regressor | ~0.82 | ~0.76 |
 
 > **Best Test Accuracy:** 82%  
-> **Best Train Accuracy:** 94%  
+> **Best Train Accuracy:** 97%  
 
 This indicates a slight overfitting, typical with complex models like Random Forest and Polynomial Regression.
 
@@ -99,5 +99,6 @@ git clone https://github.com/Moeez002/california-housing-regression.git
 pip install -r requirements.txt
 
 3. Open the file PROJECT2.ipynb
+
 
 
