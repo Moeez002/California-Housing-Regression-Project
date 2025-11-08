@@ -69,10 +69,10 @@ Missing values are handled, and new ratio-based features were engineered:
 | Model | Train R² | Test R² |
 |-------|----------|---------|
 | Linear Regression | ~0.72 | ~0.71 |
-| Polynomial Regression | ~0.92 | ~0.79 |
-| Decision Tree (tuned) | ~0.93 | ~0.81 |
-| Random Forest (tuned) | ~0.94 | ~0.82 |
-| Voting Regressor | ~0.93 | ~0.81 |
+| Polynomial Regression | ~0.80 | ~0.76 |
+| Decision Tree (tuned) | ~0.72 | ~0.74 |
+| Random Forest (tuned) | ~0.97 | ~0.82 |
+| Voting Regressor | ~0.82 | ~0.76 |
 
 > **Best Test Accuracy:** 82%  
 > **Best Train Accuracy:** 94%  
@@ -99,4 +99,5 @@ git clone https://github.com/Moeez002/california-housing-regression.git
 pip install -r requirements.txt
 
 3. Open the file PROJECT2.ipynb
+
 
