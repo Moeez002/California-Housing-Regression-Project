@@ -1,0 +1,220 @@
+# ================================
+# 📌 California Housing Regression Project
+# Author: Abdul Moeez
+# Goal: Predict Median House Value
+# ================================
+
+# ===== Import Useful Libraries =====
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+import numpy as np
+
+from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder, StandardScaler, MinMaxScaler, PolynomialFeatures
+from sklearn.linear_model import LinearRegression, LassoCV
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.svm import SVR
+from sklearn.model_selection import train_test_split, GridSearchCV, RandomizedSearchCV
+from sklearn.pipeline import make_pipeline
+from sklearn.ensemble import VotingRegressor, RandomForestRegressor
+from sklearn.metrics import r2_score, mean_squared_error
+from mlxtend.feature_selection import SequentialFeatureSelector
+
+# ================================
+# 📂 Load Dataset & Handle Missing Values
+# ================================
+housingdataset = pd.read_csv('housing.csv')
+
+# Check unique values for categorical feature
+housingdataset['ocean_proximity'].unique()
+
+# Check for missing values
+housingdataset.isnull().sum()
+
+# Fill missing total_bedrooms with mean
+bedfill = housingdataset['total_bedrooms'].mean()
+housingdataset['total_bedrooms'] = housingdataset['total_bedrooms'].fillna(bedfill)
+
+# Feature Engineering: new ratio features
+housingdataset["rooms_per_household"] = housingdataset["total_rooms"] / housingdataset["households"]
+housingdataset["bedrooms_per_room"] = housingdataset["total_bedrooms"] / housingdataset["total_rooms"]
+housingdataset["population_per_household"] = housingdataset["population"] / housingdataset["households"]
+
+# ================================
+# 🎭 Encode Categorical Feature (One Hot Encoding for ocean_proximity)
+# ================================
+oe = OneHotEncoder(sparse_output=False)
+encoded = oe.fit_transform(housingdataset[['ocean_proximity']])
+columnname = oe.get_feature_names_out(['ocean_proximity'])
+encodeddf = pd.DataFrame(encoded, columns=columnname)
+
+# Replace categorical with encoded values
+housingdataset = housingdataset.drop('ocean_proximity', axis=1)
+housingdataset = pd.concat([encodeddf, housingdataset], axis=1)
+
+# ================================
+# 📊 Outlier Detection & Removal (IQR method with 3*IQR since data is skewed)
+# ================================
+outlier_indices = set()
+for col in [
+    'housing_median_age', 'total_rooms', 'total_bedrooms',
+    'population', 'households', 'median_income', 'median_house_value',
+    'rooms_per_household', 'bedrooms_per_room', 'population_per_household'
+]:
+    Q1 = housingdataset[col].quantile(0.25)
+    Q3 = housingdataset[col].quantile(0.75)
+    IQR = Q3 - Q1
+    lower_bound = Q1 - 3 * IQR
+    upper_bound = Q3 + 3 * IQR
+    outliers = housingdataset[(housingdataset[col] < lower_bound) | (housingdataset[col] > upper_bound)].index
+    outlier_indices.update(outliers)
+
+housingdataset.drop(index=outlier_indices, inplace=True)
+
+# ================================
+# 📊 Scaling (StandardScaler for normal-like, MinMaxScaler for others)
+# ================================
+standard_cols = [
+    'total_rooms', 'total_bedrooms', 'population',
+    'households', 'median_income', 'rooms_per_household',
+    'bedrooms_per_room', 'population_per_household'
+]
+minmax_cols = ['longitude', 'latitude', 'housing_median_age']
+
+std_scaler = StandardScaler()
+minmax_scaler = MinMaxScaler()
+
+housingdataset[standard_cols] = std_scaler.fit_transform(housingdataset[standard_cols])
+housingdataset[minmax_cols] = minmax_scaler.fit_transform(housingdataset[minmax_cols])
+
+# ================================
+# 🔥 Feature Correlation Heatmap
+# ================================
+corr_matrix = housingdataset.corr()
+plt.figure(figsize=(12,8))
+sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', fmt=".2f", cbar=True)
+plt.show()
+
+# ================================
+# 🎯 Define Features & Target
+# ================================
+x = housingdataset.drop('median_house_value', axis=1)
+y = housingdataset['median_house_value']
+
+# ================================
+# 🧪 Feature Selection (Sequential Feature Selector with Linear & Tree Models)
+# ================================
+estimators = {
+    "Linear Regression": LinearRegression(),
+    "Decision Tree": DecisionTreeRegressor(random_state=42)
+}
+
+for name, model in estimators.items():
+    print(f"\nEstimator: {name}")
+    for k in range(1, 17):
+        sfs = SequentialFeatureSelector(
+            model,
+            k_features=k,
+            forward=True,
+            scoring='r2',
+            cv=5
+        )
+        sfs.fit(x, y)
+        print(f"Features: {k}, {sfs.k_feature_names_}, Score: {sfs.k_score_:.4f}")
+
+# ================================
+# 📈 Polynomial Features + Lasso (for feature importance)
+# ================================
+poly = PolynomialFeatures(degree=3)
+x_poly = poly.fit_transform(x)
+
+x_train, x_test, y_train, y_test = train_test_split(x, y, random_state=42)
+xp_train, xp_test, yp_train, yp_test = train_test_split(x_poly, y, random_state=42)
+
+la = LassoCV(alphas=[0.01, 0.1, 1, 10, 50, 100, 200, 500, 1000], cv=5, random_state=42)
+la.fit(x_train, y_train)
+print("Best alpha:", la.alpha_)
+selected_features = x_train.columns[(la.coef_ != 0)]
+print("Selected features:", list(selected_features))
+
+plt.bar(x.columns, la.coef_)
+plt.title("Linear Regression Feature Importance (Lasso)")
+plt.xlabel("Features")
+plt.show()
+
+# ================================
+# 🌳 Decision Tree (RandomizedSearchCV for Hyperparameter Tuning)
+# ================================
+dt = DecisionTreeRegressor(random_state=42)
+param_dist = {
+    'max_depth': [None, 5, 10, 20, 30],
+    'min_samples_split': np.arange(2, 20, 2),
+    'min_samples_leaf': np.arange(1, 20, 2),
+    'max_features': [None, 'sqrt', 'log2']
+}
+
+random_search = RandomizedSearchCV(
+    dt,
+    param_distributions=param_dist,
+    n_iter=20,
+    cv=3,
+    scoring='r2',
+    n_jobs=-1,
+    random_state=42
+)
+random_search.fit(x_train, y_train)
+
+print("Best parameters:", random_search.best_params_)
+print("Best CV score:", random_search.best_score_)
+best_dt = random_search.best_estimator_
+print("Decision Tree Test R2:", best_dt.score(x_test, y_test))
+
+# ================================
+# 🔗 Polynomial Regression (baseline check)
+# ================================
+pr = LinearRegression()
+pr.fit(xp_train, yp_train)
+print("Polynomial Regression Train/Test R2:", pr.score(xp_train, yp_train), pr.score(xp_test, yp_test))
+
+# ================================
+# 🤝 Voting Regressor (Ensemble of Linear, Poly & Tree)
+# ================================
+lr = LinearRegression()
+poly = make_pipeline(PolynomialFeatures(degree=3), LinearRegression())
+dt = DecisionTreeRegressor(random_state=42)
+
+voting_reg = VotingRegressor(estimators=[('linear', lr), ('poly', poly), ('tree', dt)])
+voting_reg.fit(x_train, y_train)
+y_pred = voting_reg.predict(x_test)
+
+print("Voting Regressor R2 Score:", r2_score(y_test, y_pred))
+print("Voting Regressor MSE:", mean_squared_error(y_test, y_pred))
+
+# ================================
+# 🌲 Random Forest (GridSearchCV for Hyperparameter Tuning)
+# ================================
+rf = RandomForestRegressor(random_state=42, n_jobs=-1)
+param_grid = {
+    'n_estimators': [100, 150],
+    'max_depth': [10, 15, 20, None],
+    'min_samples_split': [2, 5, 10],
+    'min_samples_leaf': [1, 2, 4],
+    'max_features': ['sqrt', 'log2']
+}
+
+grid_search = GridSearchCV(
+    estimator=rf,
+    param_grid=param_grid,
+    cv=3,
+    scoring='r2',
+    n_jobs=-1,
+    verbose=2
+)
+grid_search.fit(x_train, y_train)
+
+print("Best Parameters (Random Forest):", grid_search.best_params_)
+print("Best CV R2 Score:", grid_search.best_score_)
+
+best_rf = grid_search.best_estimator_
+print("Random Forest Train R2:", best_rf.score(x_train, y_train))
+print("Random Forest Test R2:", best_rf.score(x_test, y_test))
